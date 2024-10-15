@@ -106,7 +106,6 @@ def index():
     # Return the rendered template with the stock data
     return render_template("index.html", stock_data=stock_data, balance=balance, total=total)
 
-    # # return render_template("print.html", text1=result, text2="")
 
 
 
@@ -275,8 +274,89 @@ def register():
         return render_template("register.html")
 
 
-
 @app.route("/sell", methods=["GET", "POST"])
 @login_required
 def sell():
-         return apology("TODO")
+    if request.method == "POST":
+        symbol = request.form.get("symbol")
+        shares = request.form.get("shares")
+        username = session["user_name"]
+
+        # Validate input
+        if not symbol or not shares:
+            return apology("Please enter at least one share", 400)
+
+        # Fetch user balance
+        users = db.execute("SELECT cash FROM users WHERE username = ?", (username,))
+        if not users:
+            return apology("User not found", 400)
+
+        current_balance = users[0]["cash"]
+        current_date = date.today()
+
+        try:
+            transactions = db.execute("""
+                SELECT stock_symbol,
+                       SUM(n_stocks) AS total_stocks
+                FROM transactions
+                WHERE username = ? AND type = 'buy'
+                GROUP BY stock_symbol
+                HAVING total_stocks > 0;
+            """, (username,))
+
+            # Convert result to a list to handle potential empty result sets
+            transactions = list(transactions)
+            if transactions:
+                has_stock = any(transaction["stock_symbol"] == symbol.upper() for transaction in transactions)
+                if not has_stock:
+                    return apology("You do not own any stocks for this company", 404)
+                else:
+                    for transaction in transactions:
+                        if transaction["stock_symbol"] == symbol.upper():  # Ensure consistent capitalization
+                            stock_data = transaction
+            else:
+                return apology("No stocks found for this user.", 404)
+
+        except Exception as e:
+            return apology(f"Database query failed: {str(e)}", 500)
+
+        stock_info = lookup(symbol.upper())
+        if stock_info is None:
+            return apology("Please enter a valid symbol", 400)
+
+        if not shares.isdigit() or int(shares) <= 0:
+            return apology("Please enter a valid number of shares", 400)
+
+        shares = int(shares)
+        stock_price = float(stock_info["price"])
+        stocks_owned = stock_data["total_stocks"]
+        if stocks_owned < shares:  # Use total_stocks from stock_data
+            return apology(f"Cannot proceed, you only own {stock_data['total_stocks']} shares for this company", 400)
+
+        total = stock_price * shares
+        # Update the user's balance
+        current_balance += total
+        stocks_owned -= shares
+
+        # Update the database
+        try:
+            db.execute(
+                "INSERT INTO transactions (username, stock_symbol, stock_price, n_stocks, total_price, date, type) VALUES (?,?,?,?,?,?,?)",
+                (username, symbol.upper(), stock_price, stocks_owned, total, current_date, "sell")
+            )
+
+            db.execute("UPDATE users SET cash = ? WHERE username = ?", (current_balance, username))
+
+        except Exception as e:
+            return apology(f"Database update failed: {str(e)}", 500)
+
+        return redirect("/")
+
+
+
+    else:
+        row = db.execute("SELECT cash FROM users WHERE username = ?", session["user_name"])
+        if not row:
+            return apology("User not found", 400)
+        balance = row[0]["cash"]
+        return render_template("sell.html", balance=balance)
