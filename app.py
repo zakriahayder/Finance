@@ -20,7 +20,6 @@ app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
-# Configure CS50 Library to use SQLite database
 db = SQL("sqlite:///finance.db")
 
 
@@ -37,7 +36,6 @@ def after_request(response):
 @login_required
 def index():
     """Show portfolio of stocks"""
-    # return apology("still working on this", 400)
     user_id = session["user_id"]
     username = session["user_name"]
     total = 0
