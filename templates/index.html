@@ -1,0 +1,40 @@
+{% extends "layout.html" %}
+
+{% block title %}
+Portfolio
+{% endblock %}
+
+{% block main %}
+<div class="container mt-5">
+    <!-- Display Current Balance -->
+    <div class="balance-info mb-4">
+        <h4>Current Balance: <span class="text-success">${{ balance | round(2) }}</span></h4>
+    </div>
+
+    <!-- Stock Prices Table -->
+    <h2 class="mb-3">Stock Prices</h2>
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>Stock</th>
+                <th>Shares</th>
+                <th>Price</th>
+                <th>Total Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for stock in stock_data %}
+            <tr>
+                <td>{{ stock.name }}</td>
+                <td>{{ stock.share }}</td>
+                <td>${{ stock.price | round(2) }}</td>
+                <td>${{ stock.total_value | round(2) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="balance-info mb-4">
+        <h4>TOTAL: <span class="text-success">${{ total | round(2) }}</span></h4>
+    </div>
+</div>
+{% endblock %}
