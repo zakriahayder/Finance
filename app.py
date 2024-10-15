@@ -55,7 +55,7 @@ def index():
             SELECT stock_symbol,
                 SUM(n_stocks) AS total_stocks
             FROM transactions
-            WHERE username = ? AND type = 'buy'
+            WHERE username = ?
             GROUP BY stock_symbol
             HAVING total_stocks > 0;
         """, (session["user_name"],))
@@ -151,7 +151,7 @@ def buy():
         # Update the database
         db.execute(
             "INSERT INTO transactions (username, stock_symbol, stock_price, n_stocks, total_price, date, type) VALUES (?,?,?,?,?,?,?)",
-            username, symbol, stock_price, shares, total_cost, current_date, "buy"
+            username, symbol.upper(), stock_price, shares, total_cost, current_date, "buy"
         )
 
         db.execute("UPDATE users SET cash = ? WHERE username = ?", current_balance, username)
@@ -287,7 +287,7 @@ def sell():
             return apology("Please enter at least one share", 400)
 
         # Fetch user balance
-        users = db.execute("SELECT cash FROM users WHERE username = ?", (username,))
+        users = db.execute("SELECT cash FROM users WHERE username = ?", username)
         if not users:
             return apology("User not found", 400)
 
@@ -297,12 +297,12 @@ def sell():
         try:
             transactions = db.execute("""
                 SELECT stock_symbol,
-                       SUM(n_stocks) AS total_stocks
+                SUM(n_stocks) AS total_stocks
                 FROM transactions
-                WHERE username = ? AND type = 'buy'
+                WHERE username = ?
                 GROUP BY stock_symbol
                 HAVING total_stocks > 0;
-            """, (username,))
+            """, username)
 
             # Convert result to a list to handle potential empty result sets
             transactions = list(transactions)
@@ -312,13 +312,14 @@ def sell():
                     return apology("You do not own any stocks for this company", 404)
                 else:
                     for transaction in transactions:
-                        if transaction["stock_symbol"] == symbol.upper():  # Ensure consistent capitalization
+                        if transaction["stock_symbol"] == symbol.upper():
                             stock_data = transaction
             else:
                 return apology("No stocks found for this user.", 404)
 
         except Exception as e:
             return apology(f"Database query failed: {str(e)}", 500)
+        # return render_template("print.html", text1=transactions, text2=stock_data)
 
         stock_info = lookup(symbol.upper())
         if stock_info is None:
@@ -329,30 +330,28 @@ def sell():
 
         shares = int(shares)
         stock_price = float(stock_info["price"])
-        stocks_owned = stock_data["total_stocks"]
+        stocks_owned = int(stock_data["total_stocks"])
         if stocks_owned < shares:  # Use total_stocks from stock_data
             return apology(f"Cannot proceed, you only own {stock_data['total_stocks']} shares for this company", 400)
 
         total = stock_price * shares
-        # Update the user's balance
+        # # Update the user's balance
         current_balance += total
-        stocks_owned -= shares
 
-        # Update the database
+
+        # # Update the database
         try:
             db.execute(
-                "INSERT INTO transactions (username, stock_symbol, stock_price, n_stocks, total_price, date, type) VALUES (?,?,?,?,?,?,?)",
-                (username, symbol.upper(), stock_price, stocks_owned, total, current_date, "sell")
+                "INSERT INTO transactions (username, stock_symbol, stock_price, total_price, date, type, n_stocks) VALUES (?,?,?,?,?,?,?)",
+                username, symbol.upper(), stock_price, total, current_date, "sell", -shares
             )
 
-            db.execute("UPDATE users SET cash = ? WHERE username = ?", (current_balance, username))
+            db.execute("UPDATE users SET cash = ? WHERE username = ?", current_balance, username)
 
         except Exception as e:
             return apology(f"Database update failed: {str(e)}", 500)
 
         return redirect("/")
-
-
 
     else:
         row = db.execute("SELECT cash FROM users WHERE username = ?", session["user_name"])
