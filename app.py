@@ -20,6 +20,7 @@ app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
+# Configure CS50 Library to use SQLite database
 db = SQL("sqlite:///finance.db")
 
 
@@ -31,11 +32,11 @@ def after_request(response):
     response.headers["Pragma"] = "no-cache"
     return response
 
-
 @app.route("/")
 @login_required
 def index():
     """Show portfolio of stocks"""
+    # return apology("still working on this", 400)
     user_id = session["user_id"]
     username = session["user_name"]
     total = 0
@@ -55,7 +56,7 @@ def index():
             SELECT stock_symbol,
                 SUM(n_stocks) AS total_stocks
             FROM transactions
-            WHERE username = ?
+            WHERE username = ? 
             GROUP BY stock_symbol
             HAVING total_stocks > 0;
         """, (session["user_name"],))
@@ -106,7 +107,7 @@ def index():
     # Return the rendered template with the stock data
     return render_template("index.html", stock_data=stock_data, balance=balance, total=total)
 
-
+    # # return render_template("print.html", text1=result, text2="")
 
 
 @app.route("/buy", methods=["GET", "POST"])
@@ -268,6 +269,11 @@ def register():
         except (RuntimeError, ValueError):
             return apology("Error Adding Data to the Database", 403)
 
+        # Automatically log the user in
+        rows = db.execute("SELECT * FROM users WHERE username = ?", username)
+        session["user_id"] = rows[0]["id"]
+        session["user_name"] = rows[0]["username"]
+
         return redirect("/")
 
     else:
@@ -352,6 +358,8 @@ def sell():
             return apology(f"Database update failed: {str(e)}", 500)
 
         return redirect("/")
+
+
 
     else:
         row = db.execute("SELECT cash FROM users WHERE username = ?", session["user_name"])
