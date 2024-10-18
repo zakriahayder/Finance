@@ -1,13 +1,12 @@
 import os
 
-
 from cs50 import SQL
 from flask import Flask, flash, redirect, render_template, request, session
 from flask_session import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import date
 
-from helpers import apology, login_required, lookup, usd
+from helpers import apology, login_required, lookup, usd, get_user_cash, get_user_holdings, get_user_stock_shares, validate_shares
 
 # Configure application
 app = Flask(__name__)
@@ -32,44 +31,24 @@ def after_request(response):
     response.headers["Pragma"] = "no-cache"
     return response
 
+
 @app.route("/")
 @login_required
 def index():
     """Show portfolio of stocks"""
-    # return apology("still working on this", 400)
-    user_id = session["user_id"]
     username = session["user_name"]
     total = 0
 
-    row = db.execute("SELECT cash FROM users WHERE username = ?", username)
-    if not row:
+    # Get user's cash balance using helper function
+    balance = get_user_cash(username)
+    if balance is None:
         return apology("User not found", 400)
-    balance = row[0]["cash"]
     total += balance
 
-
-
-    #returns a list of dicts eg. [{'stock_symbol': 'nflx', 'total_stocks': 1}]
-    # Execute the query to get the stock symbols and total shares for a specific user
-    try:
-        result = db.execute("""
-            SELECT stock_symbol,
-                SUM(n_stocks) AS total_stocks
-            FROM transactions
-            WHERE username = ? 
-            GROUP BY stock_symbol
-            HAVING total_stocks > 0;
-        """, (session["user_name"],))
-
-        # Convert result to a list to handle potential empty result sets
-        result = list(result)
-        if not result:
-            return apology("No stocks found for this user.", 404)
-
-    except Exception as e:
-        return apology(f"Database query failed: {str(e)}", 500)
-
-    print(result)
+    # Get user's current stock holdings using helper function
+    result = get_user_holdings(username)
+    if not result:
+        return apology("No stocks found. Click 'Buy' to buy a stock", 404)
 
     # Initialize an empty list to store stock data
     stock_data = []
@@ -99,20 +78,18 @@ def index():
         except Exception as e:
             return apology(f"Error retrieving data for {stock_info['name']}: {str(e)}", 500)
 
-        print(stock_data)
-        for i in range(len(stock_data)):
-            total += stock_data[i]["total_value"]
-
+    # Calculate the total value of stocks
+    for item in stock_data:
+        total += item["total_value"]
 
     # Return the rendered template with the stock data
     return render_template("index.html", stock_data=stock_data, balance=balance, total=total)
-
-    # # return render_template("print.html", text1=result, text2="")
 
 
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
 def buy():
+    """Buy shares of stock"""
     if request.method == "POST":
         symbol = request.form.get("symbol")
         shares = request.form.get("shares")
@@ -122,22 +99,20 @@ def buy():
         if not symbol or not shares:
             return apology("Please enter at least one share", 400)
 
-        # Fetch user balance
-        result = db.execute("SELECT cash FROM users WHERE username = ?", username)
-        if not result:
+        # Fetch user balance using helper function
+        current_balance = get_user_cash(username)
+        if current_balance is None:
             return apology("User not found", 400)
-        current_balance = result[0]["cash"]
 
         current_date = date.today()
-
-        total_cost = 0
 
         stock_info = lookup(symbol.upper())
 
         if stock_info is None:
             return apology("Please enter a valid symbol", 400)
 
-        if not shares.isdigit() or int(shares) <= 0:
+        # Validate shares input using helper function
+        if not validate_shares(shares):
             return apology("Please enter a valid number of shares", 400)
 
         stock_price = float(stock_info["price"])
@@ -160,13 +135,11 @@ def buy():
         return redirect("/")
 
     else:
-        row = db.execute("SELECT cash FROM users WHERE username = ?", session["user_name"])
-        if not row:
+        # Fetch user balance using helper function
+        balance = get_user_cash(session["user_name"])
+        if balance is None:
             return apology("User not found", 400)
-        balance = row[0]["cash"]
         return render_template("buy.html", balance=balance)
-
-
 
 
 @app.route("/history")
@@ -244,7 +217,6 @@ def quote():
         return render_template("quote.html")
 
 
-
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Register user"""
@@ -261,7 +233,7 @@ def register():
         if not password or not confirmation:
             return apology("Please enter a valid password", 400)
         elif password != confirmation:
-            return apology("Passwords donot match", 400)
+            return apology("Passwords do not match", 400)
 
         try:
             hashed_password = generate_password_hash(password)
@@ -283,6 +255,7 @@ def register():
 @app.route("/sell", methods=["GET", "POST"])
 @login_required
 def sell():
+    """Sell shares of stock"""
     if request.method == "POST":
         symbol = request.form.get("symbol")
         shares = request.form.get("shares")
@@ -292,60 +265,38 @@ def sell():
         if not symbol or not shares:
             return apology("Please enter at least one share", 400)
 
-        # Fetch user balance
-        users = db.execute("SELECT cash FROM users WHERE username = ?", username)
-        if not users:
+        # Fetch user balance using helper function
+        current_balance = get_user_cash(username)
+        if current_balance is None:
             return apology("User not found", 400)
 
-        current_balance = users[0]["cash"]
         current_date = date.today()
 
-        try:
-            transactions = db.execute("""
-                SELECT stock_symbol,
-                SUM(n_stocks) AS total_stocks
-                FROM transactions
-                WHERE username = ?
-                GROUP BY stock_symbol
-                HAVING total_stocks > 0;
-            """, username)
+        # Validate shares input using helper function
+        if not validate_shares(shares):
+            return apology("Please enter a valid number of shares", 400)
 
-            # Convert result to a list to handle potential empty result sets
-            transactions = list(transactions)
-            if transactions:
-                has_stock = any(transaction["stock_symbol"] == symbol.upper() for transaction in transactions)
-                if not has_stock:
-                    return apology("You do not own any stocks for this company", 404)
-                else:
-                    for transaction in transactions:
-                        if transaction["stock_symbol"] == symbol.upper():
-                            stock_data = transaction
-            else:
-                return apology("No stocks found for this user.", 404)
-
-        except Exception as e:
-            return apology(f"Database query failed: {str(e)}", 500)
-        # return render_template("print.html", text1=transactions, text2=stock_data)
+        shares = int(shares)
 
         stock_info = lookup(symbol.upper())
         if stock_info is None:
             return apology("Please enter a valid symbol", 400)
 
-        if not shares.isdigit() or int(shares) <= 0:
-            return apology("Please enter a valid number of shares", 400)
-
-        shares = int(shares)
         stock_price = float(stock_info["price"])
-        stocks_owned = int(stock_data["total_stocks"])
-        if stocks_owned < shares:  # Use total_stocks from stock_data
-            return apology(f"Cannot proceed, you only own {stock_data['total_stocks']} shares for this company", 400)
+
+        # Get total shares of the stock using helper function
+        stocks_owned = get_user_stock_shares(username, symbol)
+        if stocks_owned is None:
+            return apology("Error fetching stock shares", 500)
+        elif stocks_owned < shares:
+            return apology(f"Cannot proceed, you only own {stocks_owned} shares for this company", 400)
 
         total = stock_price * shares
-        # # Update the user's balance
+
+        # Update the user's balance
         current_balance += total
 
-
-        # # Update the database
+        # Update the database
         try:
             db.execute(
                 "INSERT INTO transactions (username, stock_symbol, stock_price, total_price, date, type, n_stocks) VALUES (?,?,?,?,?,?,?)",
@@ -359,11 +310,9 @@ def sell():
 
         return redirect("/")
 
-
-
     else:
-        row = db.execute("SELECT cash FROM users WHERE username = ?", session["user_name"])
-        if not row:
+        # Fetch user balance using helper function
+        balance = get_user_cash(session["user_name"])
+        if balance is None:
             return apology("User not found", 400)
-        balance = row[0]["cash"]
         return render_template("sell.html", balance=balance)

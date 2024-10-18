@@ -1,8 +1,10 @@
 import requests
 
+from cs50 import SQL
 from flask import redirect, render_template, session
 from functools import wraps
 
+db = SQL("sqlite:///finance.db")
 
 def apology(message, code=400):
     """Render message as an apology to user."""
@@ -67,3 +69,42 @@ def lookup(symbol):
 def usd(value):
     """Format value as USD."""
     return f"${value:,.2f}"
+
+
+def get_user_cash(username):
+    """Get the user's cash balance."""
+    rows = db.execute("SELECT cash FROM users WHERE username = ?", username)
+    if not rows:
+        return None
+    return rows[0]["cash"]
+
+def get_user_holdings(username):
+    """Get the user's current stock holdings."""
+    holdings = db.execute("""
+        SELECT stock_symbol,
+            SUM(n_stocks) AS total_stocks
+        FROM transactions
+        WHERE username = ?
+        GROUP BY stock_symbol
+        HAVING total_stocks > 0;
+    """, username)
+    return holdings
+
+def get_user_stock_shares(username, symbol):
+    """Get the total number of shares the user owns of a specific stock."""
+    result = db.execute("""
+        SELECT SUM(n_stocks) AS total_stocks
+        FROM transactions
+        WHERE username = ? AND stock_symbol = ?
+        GROUP BY stock_symbol
+    """, username, symbol.upper())
+    if result:
+        return result[0]["total_stocks"]
+    else:
+        return 0
+
+def validate_shares(shares):
+    """Validate that shares is a positive integer."""
+    if not shares.isdigit() or int(shares) <= 0:
+        return False
+    return True
