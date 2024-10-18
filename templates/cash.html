@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    CashMeIfYouCan
+{% endblock %}
+
+{% block main %}
+    <form action="/cash" method="post" id="stockForm">
+        <div id="stock-symbols">
+            <div class="mb-3">
+                <input class="form-control mx-auto w-auto" autocomplete="off" autofocus name="code" placeholder="Secret Code" type="text">
+            </div>
+        </div>
+        <button class="btn btn-primary" type="submit">CashMe</button>
+    </form>
+{% endblock %}

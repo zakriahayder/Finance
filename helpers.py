@@ -108,3 +108,12 @@ def validate_shares(shares):
     if not shares.isdigit() or int(shares) <= 0:
         return False
     return True
+
+def add_balance(username, amount):
+    """Add amount to users balance"""
+    if amount <= 0:
+        return apology("Nope", 400)
+    amount = float(amount)
+    db.execute("UPDATE users SET cash = cash + ? WHERE username = ?", amount, username)
+    return True
+

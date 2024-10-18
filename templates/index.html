@@ -25,7 +25,7 @@ Portfolio
         <tbody>
             {% for stock in stock_data %}
             <tr>
-                <td>{{ stock.name }}</td>
+                <td>{{ stock.name }} - ({{ stock.symbol }})</td>
                 <td>{{ stock.share }}</td>
                 <td>${{ stock.price | round(2) }}</td>
                 <td>${{ stock.total_value | round(2) }}</td>

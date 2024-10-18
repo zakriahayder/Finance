@@ -6,7 +6,7 @@ from flask_session import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import date
 
-from helpers import apology, login_required, lookup, usd, get_user_cash, get_user_holdings, get_user_stock_shares, validate_shares
+from helpers import apology, login_required, lookup, usd, get_user_cash, get_user_holdings, get_user_stock_shares, validate_shares, add_balance
 
 # Configure application
 app = Flask(__name__)
@@ -56,27 +56,29 @@ def index():
     # Process each stock in the result
     for stock in result:
         try:
+            # Store the symbol and shares
             stock_info = {
-                "name": stock["stock_symbol"],
+                "symbol": stock["stock_symbol"],
                 "share": stock["total_stocks"]
             }
 
             # Look up the latest price and other information for the stock
-            latest_info = lookup(stock_info["name"])
+            latest_info = lookup(stock_info["symbol"])
 
             # Check if the lookup result is properly formatted
             if "price" not in latest_info or "name" not in latest_info or "symbol" not in latest_info:
-                return apology(f"Invalid stock data for {stock_info['name']}", 400)
+                return apology(f"Invalid stock data for {stock_info['symbol']}", 400)
 
-            # Update stock_info with the latest price and total value
-            stock_info["price"] = latest_info["price"]
+            # Update stock_info with the latest data
+            stock_info["name"] = latest_info["name"]           # Full company name
+            stock_info["price"] = latest_info["price"]         # Current stock price
             stock_info["total_value"] = float(stock_info["price"]) * int(stock_info["share"])
 
             # Append the stock information to the stock_data list
             stock_data.append(stock_info)
 
         except Exception as e:
-            return apology(f"Error retrieving data for {stock_info['name']}: {str(e)}", 500)
+            return apology(f"Error retrieving data for {stock_info['symbol']}: {str(e)}", 500)
 
     # Calculate the total value of stocks
     for item in stock_data:
@@ -84,6 +86,28 @@ def index():
 
     # Return the rendered template with the stock data
     return render_template("index.html", stock_data=stock_data, balance=balance, total=total)
+
+
+
+@app.route("/cash", methods=["GET", "POST"])
+@login_required
+def cash():
+    """Give Cash to the user"""
+    if request.method == "POST":
+        
+        code = request.form.get("code")
+
+        if session["redeem_limit"] < 3:
+            if code.upper() == "SUDOGETCASH":
+                add_balance(session["user_name"], 10000)
+                flash("Successfully added $10,000 to your account!")
+                session["redeem_limit"] += 1
+                return redirect("/")
+        else:
+            return apology("Thats a suspicious amount of money already", 911)
+    else:
+        return render_template("Cash.html")
+
 
 
 @app.route("/buy", methods=["GET", "POST"])
@@ -132,6 +156,7 @@ def buy():
 
         db.execute("UPDATE users SET cash = ? WHERE username = ?", current_balance, username)
 
+        flash(f"Successfully bought {shares} shares of {symbol.upper()}!")
         return redirect("/")
 
     else:
@@ -180,7 +205,10 @@ def login():
         # Remember which user has logged in
         session["user_id"] = rows[0]["id"]
         session["user_name"] = rows[0]["username"]
+        session["redeem_limit"] = 0
 
+
+        flash("Successfully logged in!")
         # Redirect user to home page
         return redirect("/")
 
@@ -196,6 +224,7 @@ def logout():
     # Forget any user_id
     session.clear()
 
+    flash("Successfully logged out!")
     # Redirect user to login form
     return redirect("/")
 
@@ -211,6 +240,7 @@ def quote():
         if not data or 'error' in data:
             return apology(f"Invalid symbol: {symbol}", 400)
         data["price"] = usd(data["price"])
+        flash(f"Successfully retrieved quote for {symbol.upper()}!")
         return render_template("quoted.html", stock_data=[data])  # Wrap in a list for consistency
 
     else:
@@ -245,7 +275,10 @@ def register():
         rows = db.execute("SELECT * FROM users WHERE username = ?", username)
         session["user_id"] = rows[0]["id"]
         session["user_name"] = rows[0]["username"]
+        session["redeem_limit"] = 0
 
+
+        flash("Successfully registered and logged in!")
         return redirect("/")
 
     else:
@@ -305,10 +338,11 @@ def sell():
 
             db.execute("UPDATE users SET cash = ? WHERE username = ?", current_balance, username)
 
+            flash(f"Successfully sold {shares} shares of {symbol.upper()}!")
+            return redirect("/")
+
         except Exception as e:
             return apology(f"Database update failed: {str(e)}", 500)
-
-        return redirect("/")
 
     else:
         # Fetch user balance using helper function
